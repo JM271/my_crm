@@ -4,6 +4,7 @@ import 'package:my_crm/main.dart';
 import 'package:my_crm/src/contact_import.dart';
 import 'package:my_crm/src/crm_store.dart';
 import 'package:my_crm/src/models.dart';
+import 'package:my_crm/src/widgets/forms.dart';
 
 DateTime fixedNow() => DateTime(2026, 11, 23, 9);
 
@@ -152,6 +153,94 @@ void main() {
     // No products: named after the day.
     expect(deal.title, 'Deal of Nov 23, 2026');
     expect(deal.value, 2900);
+  });
+
+  testWidgets('a new name typed into a new deal is saved as a customer', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final store = await loadStore();
+    final contacts = store.allContacts.length;
+    await tester.pumpWidget(MolenstraatApp(store: store));
+
+    await tester.tap(find.text('Deals').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('New deal').first);
+    await tester.pumpAndSettle();
+
+    final dealDialog = find.ancestor(
+      of: find.text('Add deal'),
+      matching: find.byType(AlertDialog),
+    );
+    final customerField = find.descendant(
+      of: find.byType(DealerPicker),
+      matching: find.byType(TextField),
+    );
+    await tester.enterText(customerField, 'Marc Dubois');
+    await tester.pumpAndSettle();
+    expect(find.textContaining('is not in the CRM yet'), findsOneWidget);
+
+    await tester.enterText(
+      find
+          .descendant(of: dealDialog, matching: find.byType(TextFormField))
+          .last,
+      '1800',
+    );
+    await tester.tap(find.text('Add deal'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Add deal'), findsNothing);
+    expect(store.allContacts.length, contacts + 1);
+    final marc = store.privateCustomers.single;
+    expect(marc.name, 'Marc Dubois');
+    expect(store.dealsFor(marc.id).single.value, 1800);
+  });
+
+  testWidgets('typing the name of an existing customer picks them', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final store = await loadStore();
+    final anna = store.addContact(
+      name: 'Anna Keller',
+      kind: ContactKind.person,
+    );
+    final contacts = store.allContacts.length;
+    await tester.pumpWidget(MolenstraatApp(store: store));
+
+    await tester.tap(find.text('Deals').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('New deal').first);
+    await tester.pumpAndSettle();
+
+    final dealDialog = find.ancestor(
+      of: find.text('Add deal'),
+      matching: find.byType(AlertDialog),
+    );
+    await tester.enterText(
+      find.descendant(
+        of: find.byType(DealerPicker),
+        matching: find.byType(TextField),
+      ),
+      'anna keller',
+    );
+    await tester.pumpAndSettle();
+    expect(find.textContaining('is not in the CRM yet'), findsNothing);
+    await tester.enterText(
+      find
+          .descendant(of: dealDialog, matching: find.byType(TextFormField))
+          .last,
+      '900',
+    );
+    await tester.tap(find.text('Add deal'));
+    await tester.pumpAndSettle();
+
+    expect(store.allContacts.length, contacts);
+    expect(store.dealsFor(anna.id).single.value, 900);
   });
 
   testWidgets('the Dealers page lists private customers separately', (

@@ -14,7 +14,8 @@ Runs on Android and on the web at **https://crm-molenstraat.web.app**.
   (company becomes the dealer, the person its contact person). Dealers are matched by email or shop name,
   so re-importing never creates duplicates and never overwrites edits made in the app.
 - **Private customers:** people buying directly. Add one from the Dealers page (toggle *Private*) or straight
-  from the *New deal* form. They have deals, tasks and a timeline, but stay out of dealer lists, stats,
+  from the *New deal* form, or just type a new name in the deal's *Customer* field: saving the deal
+  also saves that person as a private customer. They have deals, tasks and a timeline, but stay out of dealer lists, stats,
   imports, exports and consignment. Stored as contacts with `kind: person`.
 - **Activity log:** log calls, visits, emails and notes per dealer. The app tracks the last contact date,
   sorts dealers by "longest since contact" and lists leads/customers without contact for 30+ days on the dashboard.

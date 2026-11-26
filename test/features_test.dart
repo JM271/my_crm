@@ -336,10 +336,10 @@ void main() {
 
       // Full screen on a phone, steps in order.
       expect(find.byType(Dialog), findsOneWidget);
-      // Who, what, how much: no name to type, no stage for a new deal.
-      expect(find.text('WHO'), findsOneWidget);
-      expect(find.text('WHAT'), findsOneWidget);
-      expect(find.text('HOW MUCH'), findsOneWidget);
+      // No section headings, no name to type, no stage for a new deal.
+      expect(find.text('WHO'), findsNothing);
+      expect(find.text('WHAT'), findsNothing);
+      expect(find.text('HOW MUCH'), findsNothing);
       expect(find.text('STAGE'), findsNothing);
       expect(find.widgetWithText(TextFormField, 'Description'), findsNothing);
 
