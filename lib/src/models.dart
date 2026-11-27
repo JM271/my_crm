@@ -92,7 +92,12 @@ class Contact {
     this.city = '',
     this.website = '',
     this.notes = '',
+    this.depotMargin,
+    this.stockMargin,
   });
+
+  /// Margin a partner keeps on a dépôt-vente bike when no rate is set.
+  static const defaultDepotMargin = 20.0;
 
   final String id;
   final ContactKind kind;
@@ -111,7 +116,22 @@ class Contact {
   final DateTime createdAt;
   final String notes;
 
+  /// The partner's margin in percent of the retail price on dépôt-vente
+  /// bikes. Null: [defaultDepotMargin].
+  final double? depotMargin;
+
+  /// The partner's margin in percent of the retail price on bikes they buy
+  /// for their own stock. Null: not agreed yet, deals use retail prices.
+  final double? stockMargin;
+
   bool get isPrivate => kind == ContactKind.person;
+
+  /// Dépôt-vente margin in effect (0 for private customers).
+  double get effectiveDepotMargin =>
+      isPrivate ? 0 : depotMargin ?? defaultDepotMargin;
+
+  /// Own-stock margin in effect (0 for private customers or when not set).
+  double get effectiveStockMargin => isPrivate ? 0 : stockMargin ?? 0;
 
   /// `https://www.shop.ch/` → `shop.ch`
   String get websiteLabel => website
@@ -164,6 +184,8 @@ class Contact {
     String? website,
     ContactStatus? status,
     String? notes,
+    double? Function()? depotMargin,
+    double? Function()? stockMargin,
   }) => Contact(
     id: id,
     kind: kind,
@@ -179,6 +201,8 @@ class Contact {
     status: status ?? this.status,
     createdAt: createdAt,
     notes: notes ?? this.notes,
+    depotMargin: depotMargin == null ? this.depotMargin : depotMargin(),
+    stockMargin: stockMargin == null ? this.stockMargin : stockMargin(),
   );
 
   Map<String, Object?> toJson() => {
@@ -196,6 +220,9 @@ class Contact {
     'status': status.name,
     'createdAt': createdAt.toIso8601String(),
     'notes': notes,
+    // Only written when set, so records without rates stay as they were.
+    'depotMargin': ?depotMargin,
+    'stockMargin': ?stockMargin,
   };
 
   factory Contact.fromJson(Map<String, Object?> json) => Contact(
@@ -218,8 +245,19 @@ class Contact {
     ),
     createdAt: DateTime.parse(json['createdAt'] as String),
     notes: json['notes'] as String? ?? '',
+    depotMargin: (json['depotMargin'] as num?)?.toDouble(),
+    stockMargin: (json['stockMargin'] as num?)?.toDouble(),
   );
 }
+
+/// What a partner pays for a bike: [retail] minus [marginPercent], rounded
+/// to whole francs (prices are shown and typed in whole francs).
+double partnerPrice(double retail, double marginPercent) =>
+    (retail * (100 - marginPercent) / 100).roundToDouble();
+
+/// "20%" style label for a margin rate.
+String formatMargin(double percent) =>
+    '${percent == percent.roundToDouble() ? percent.toInt() : percent}%';
 
 /// One order line on a deal, e.g. 3 × E-Fatbike at CHF 2,500.
 class DealItem {

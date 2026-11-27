@@ -305,6 +305,8 @@ class CrmStore extends ChangeNotifier {
     String website = '',
     ContactStatus status = ContactStatus.lead,
     String notes = '',
+    double? depotMargin,
+    double? stockMargin,
   }) {
     final contact = Contact(
       id: _newId(),
@@ -321,6 +323,8 @@ class CrmStore extends ChangeNotifier {
       status: status,
       createdAt: now(),
       notes: notes,
+      depotMargin: depotMargin,
+      stockMargin: stockMargin,
     );
     _contacts.insert(0, contact);
     _log(
@@ -850,19 +854,25 @@ class CrmStore extends ChangeNotifier {
   }
 
   /// Moves a bike to another dealer (or places a returned bike again).
-  void moveBike(String id, String toContactId, {DateTime? at}) {
+  /// Moves (or places again) a bike at [toContactId], with [price] as its
+  /// new price when given.
+  void moveBike(String id, String toContactId, {DateTime? at, double? price}) {
     final b = bikeById(id);
     if (b == null) return;
     final when = at ?? now();
     final from = b.contactId;
-    final text = b.isAtDealer
+    final moved = b.isAtDealer
         ? 'Moved from ${_dealerName(from)} to ${_dealerName(toContactId)}'
         : 'Placed at ${_dealerName(toContactId)}';
+    final text = price == null || price == b.price
+        ? moved
+        : '$moved, price ${formatMoney(price)}';
     _replaceBike(
       _withEvent(
         b.copyWith(
           contactId: toContactId,
           placedAt: when,
+          price: price,
           status: ConsignmentStatus.atDealer,
           soldAt: () => null,
           salePrice: () => null,

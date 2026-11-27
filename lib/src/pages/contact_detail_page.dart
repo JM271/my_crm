@@ -143,6 +143,16 @@ class ContactDetailPage extends StatelessWidget {
               empty: contact.website.isEmpty,
               link: contact.websiteUri,
             ),
+          if (!private)
+            _InfoLine(
+              icon: Icons.percent_rounded,
+              value:
+                  'Margin: dépôt-vente '
+                  '${formatMargin(contact.effectiveDepotMargin)}'
+                  '${contact.depotMargin == null ? ' (standard)' : ''}'
+                  ' · own stock '
+                  '${contact.stockMargin == null ? 'not set' : formatMargin(contact.stockMargin!)}',
+            ),
           _InfoLine(
             icon: Icons.calendar_today_outlined,
             value: 'Added: ${formatDay(contact.createdAt, now)}',

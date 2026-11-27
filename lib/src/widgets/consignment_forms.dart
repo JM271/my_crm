@@ -266,6 +266,7 @@ List<String> _modelNames([String? current]) => [
     current,
 ];
 
+/// Retail price of a consignment model.
 double? _modelPrice(String model) {
   for (final m in consignmentModels) {
     if (m.name == model) return m.price;
@@ -273,12 +274,23 @@ double? _modelPrice(String model) {
   return null;
 }
 
+/// Dépôt-vente margin of the dealer [contactId].
+double _depotMargin(CrmStore store, String? contactId) =>
+    store.contactById(contactId)?.effectiveDepotMargin ??
+    Contact.defaultDepotMargin;
+
 /// One bike being placed: its model, frame number and price.
 class _BikeLine {
-  _BikeLine(this.model, double price)
-    : price = TextEditingController(text: formatAmount(price));
+  _BikeLine(this.model, double this.retail, double margin)
+    : price = TextEditingController(
+        text: formatAmount(partnerPrice(retail, margin)),
+      );
 
   String model;
+
+  /// Retail price the dealer's price was worked out from. Null once the
+  /// price was typed by hand: then it is left alone.
+  double? retail;
   final frame = TextEditingController();
   final TextEditingController price;
   final focus = FocusNode();
@@ -318,8 +330,19 @@ class _PlaceBikesFormState extends State<_PlaceBikesForm> {
     super.dispose();
   }
 
-  void _add(String model, double price) {
-    final line = _BikeLine(model, price);
+  double get _margin => _depotMargin(widget.store, _contactId);
+
+  /// Works the prices out again for another dealer, except those typed in.
+  void _reprice() {
+    for (final l in _lines) {
+      if (l.retail != null) {
+        l.price.text = formatAmount(partnerPrice(l.retail!, _margin));
+      }
+    }
+  }
+
+  void _add(String model, double retail) {
+    final line = _BikeLine(model, retail, _margin);
     setState(() {
       _lines.add(line);
       _noBikes = false;
@@ -409,6 +432,7 @@ class _PlaceBikesFormState extends State<_PlaceBikesForm> {
                   onSelected: (id) => setState(() {
                     _contactId = id;
                     _dealerMissing = false;
+                    _reprice();
                   }),
                 ),
                 const SizedBox(height: 18),
@@ -422,7 +446,8 @@ class _PlaceBikesFormState extends State<_PlaceBikesForm> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Tap a model once per bike.',
+                  'Tap a model once per bike. The price is what the dealer '
+                  'pays: retail minus their ${formatMargin(_margin)} margin.',
                   style: TextStyle(
                     color: _noBikes ? danger : muted,
                     fontSize: 12,
@@ -441,7 +466,10 @@ class _PlaceBikesFormState extends State<_PlaceBikesForm> {
                           size: 18,
                           color: forest,
                         ),
-                        label: Text('${m.name} · ${formatMoney(m.price)}'),
+                        label: Text(
+                          '${m.name} · '
+                          '${formatMoney(partnerPrice(m.price, _margin))}',
+                        ),
                         labelStyle: const TextStyle(
                           color: ink,
                           fontSize: 12,
@@ -459,6 +487,7 @@ class _PlaceBikesFormState extends State<_PlaceBikesForm> {
                     key: ObjectKey(_lines[i]),
                     index: i + 1,
                     bike: _lines[i],
+                    margin: _margin,
                     validateFrame: () => _validateFrame(_lines[i]),
                     onChanged: () => setState(() {}),
                     onRemove: () => _remove(_lines[i]),
@@ -526,6 +555,7 @@ class _BikeLineEditor extends StatelessWidget {
     super.key,
     required this.index,
     required this.bike,
+    required this.margin,
     required this.validateFrame,
     required this.onChanged,
     required this.onRemove,
@@ -533,6 +563,7 @@ class _BikeLineEditor extends StatelessWidget {
 
   final int index;
   final _BikeLine bike;
+  final double margin;
   final String? Function() validateFrame;
   final VoidCallback onChanged;
   final VoidCallback onRemove;
@@ -576,8 +607,13 @@ class _BikeLineEditor extends StatelessWidget {
                   onChanged: (name) {
                     if (name == null) return;
                     bike.model = name;
-                    final price = _modelPrice(name);
-                    if (price != null) bike.price.text = formatAmount(price);
+                    final retail = _modelPrice(name);
+                    if (retail != null) {
+                      bike.retail = retail;
+                      bike.price.text = formatAmount(
+                        partnerPrice(retail, margin),
+                      );
+                    }
                     onChanged();
                   },
                 ),
@@ -615,7 +651,10 @@ class _BikeLineEditor extends StatelessWidget {
                     ),
                     decoration: inputDecoration(currencyLabel)
                         .copyWith(fillColor: Colors.white),
-                    onChanged: (_) => onChanged(),
+                    onChanged: (_) {
+                      bike.retail = null;
+                      onChanged();
+                    },
                     validator: (v) =>
                         parseMoney(v ?? '') == null ? 'Price?' : null,
                   ),
@@ -710,8 +749,15 @@ class _EditBikeFormState extends State<_EditBikeForm> {
                   ],
                   onChanged: (name) => setState(() {
                     _model = name ?? _model;
-                    final price = _modelPrice(_model);
-                    if (price != null) _price.text = formatAmount(price);
+                    final retail = _modelPrice(_model);
+                    if (retail != null) {
+                      _price.text = formatAmount(
+                        partnerPrice(
+                          retail,
+                          _depotMargin(widget.store, widget.bike.contactId),
+                        ),
+                      );
+                    }
                   }),
                 ),
                 const SizedBox(height: 14),
@@ -876,6 +922,20 @@ class _MoveDialogState extends State<_MoveDialog> {
   late DateTime _at = widget.store.now();
   bool _missing = false;
 
+  /// The bike's price at the new dealer: their rate, when the price followed
+  /// the old dealer's rate. A price agreed by hand stays.
+  double get _newPrice {
+    final bike = widget.bike;
+    final retail = _modelPrice(bike.model);
+    if (retail == null || _to == null) return bike.price;
+    final store = widget.store;
+    final followedRate =
+        bike.price == partnerPrice(retail, _depotMargin(store, bike.contactId));
+    return followedRate
+        ? partnerPrice(retail, _depotMargin(store, _to))
+        : bike.price;
+  }
+
   @override
   Widget build(BuildContext context) {
     final store = widget.store;
@@ -908,6 +968,15 @@ class _MoveDialogState extends State<_MoveDialog> {
                 _missing = false;
               }),
             ),
+            if (_to != null && _newPrice != bike.price) ...[
+              const SizedBox(height: 8),
+              Text(
+                'New price: ${formatMoney(_newPrice)} '
+                '(retail minus ${formatMargin(_depotMargin(store, _to))} '
+                'margin, was ${formatMoney(bike.price)})',
+                style: const TextStyle(color: muted, fontSize: 12),
+              ),
+            ],
             const SizedBox(height: 14),
             OutlinedButton.icon(
               onPressed: () async {
@@ -932,7 +1001,7 @@ class _MoveDialogState extends State<_MoveDialog> {
               setState(() => _missing = true);
               return;
             }
-            store.moveBike(bike.id, _to!, at: _at);
+            store.moveBike(bike.id, _to!, at: _at, price: _newPrice);
             Navigator.pop(context);
           },
           child: Text(bike.isAtDealer ? 'Move bike' : 'Place bike'),

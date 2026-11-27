@@ -8,6 +8,12 @@ Runs on Android and on the web at **https://crm-molenstraat.web.app**.
 - **Overview:** live stats, sales pipeline, recent activity, today's tasks
 - **Dealers:** shops with type (e-bikes / trottinettes / both), status (Lead / Customer / Partner / Dépôt-vente),
   contact person, city, phone, email and website.
+- **Partner margins:** each dealer has its own margin in percent of the retail price, one for
+  dépôt-vente bikes (20% when not set) and one for bikes they buy for their own stock (none when
+  not set). Placing a bike pre-fills what the dealer pays: retail minus their dépôt-vente margin,
+  in whole francs. Order lines on a dealer's deal start at retail minus their own-stock margin;
+  private customers pay retail. Prices typed by hand are kept. Moving a bike to a dealer with
+  another rate updates its price, unless it was agreed by hand.
   Search, filter by type and status, add/edit/delete, and a detail page with clickable phone/email/website,
   notes, deals, tasks and a timeline.
 - **Import (CSV):** HubSpot *companies* export (each company becomes a dealer) or *contacts* export
@@ -27,7 +33,9 @@ Runs on Android and on the web at **https://crm-molenstraat.web.app**.
   Place several bikes at once (one frame number per line), mark as sold (with paid / not paid), returned,
   or move to another dealer; every bike keeps a history. Search by frame number, filter by status or dealer,
   see value at dealers and amounts still owed, export as CSV. Dealers holding bikes can't be deleted.
-- **Tasks:** to-dos with due date/time, optionally linked to a dealer, grouped as Overdue / Today / Upcoming / Completed
+- **Tasks:** to-dos with due date/time, optionally linked to a dealer or private customer, grouped as
+  Overdue / Today / Upcoming / Completed. A new name typed in the task's *Customer* field is saved as a
+  private customer with the task.
 - **Reports:** dealers per status and type, top cities, value per stage, products sold, top customers, task progress
 
 - **Settings:** your name and currency (CHF or EUR).

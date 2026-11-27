@@ -49,7 +49,7 @@ void main() {
     await tester.tap(find.text('New dealer').first);
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextFormField).at(0), 'Velo Noor');
-    await tester.enterText(find.byType(TextFormField).at(4), 'Bern');
+    await tester.enterText(find.widgetWithText(TextFormField, 'City'), 'Bern');
     await tester.tap(find.text('Add dealer'));
     await tester.pumpAndSettle();
 
@@ -65,7 +65,10 @@ void main() {
 
     await tester.tap(find.text('New dealer').first);
     await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextFormField).at(6), 'not-an-email');
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Email'),
+      'not-an-email',
+    );
     await tester.tap(find.text('Add dealer'));
     await tester.pump();
 

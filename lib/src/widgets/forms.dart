@@ -59,6 +59,20 @@ Future<Task?> showTaskForm(
   );
 }
 
+/// A margin typed as "25", "25%" or "22,5". Null when empty or not a number.
+double? _parseMargin(String text) {
+  final t = text.replaceAll('%', '').replaceAll(',', '.').trim();
+  return t.isEmpty ? null : double.tryParse(t);
+}
+
+String? _validMargin(String? v) {
+  if ((v ?? '').trim().isEmpty) return null;
+  final m = _parseMargin(v!);
+  if (m == null) return 'Enter a number';
+  if (m < 0 || m >= 100) return 'Between 0 and 99';
+  return null;
+}
+
 class _FormDialog extends StatelessWidget {
   const _FormDialog({
     required this.title,
@@ -147,7 +161,16 @@ class _ContactFormState extends State<_ContactForm> {
   late final _phone = TextEditingController(text: widget.existing?.phone);
   late final _website = TextEditingController(text: widget.existing?.website);
   late final _notes = TextEditingController(text: widget.existing?.notes);
+  late final _depotMargin = TextEditingController(
+    text: _marginText(widget.existing?.depotMargin),
+  );
+  late final _stockMargin = TextEditingController(
+    text: _marginText(widget.existing?.stockMargin),
+  );
   late var _status = widget.existing?.status ?? ContactStatus.lead;
+
+  static String _marginText(double? m) =>
+      m == null ? '' : formatMargin(m).replaceAll('%', '');
   late var _type = widget.existing?.type ?? ShopType.unknown;
 
   @override
@@ -162,6 +185,8 @@ class _ContactFormState extends State<_ContactForm> {
       _phone,
       _website,
       _notes,
+      _depotMargin,
+      _stockMargin,
     ]) {
       c.dispose();
     }
@@ -187,9 +212,15 @@ class _ContactFormState extends State<_ContactForm> {
         website: _website.text.trim(),
         status: _status,
         notes: _notes.text.trim(),
+        depotMargin: _parseMargin(_depotMargin.text),
+        stockMargin: _parseMargin(_stockMargin.text),
       );
     } else {
+      final depot = _parseMargin(_depotMargin.text);
+      final stock = _parseMargin(_stockMargin.text);
       result = existing.copyWith(
+        depotMargin: () => depot,
+        stockMargin: () => stock,
         name: _name.text.trim(),
         type: _type,
         contactPerson: _person.text.trim(),
@@ -258,6 +289,34 @@ class _ContactFormState extends State<_ContactForm> {
                     ),
                 ],
                 onChanged: (s) => setState(() => _status = s ?? _status),
+              ),
+            ),
+          ],
+        ),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: AppFormField(
+                controller: _depotMargin,
+                label: 'Dépôt-vente margin %',
+                hint: '${formatMargin(Contact.defaultDepotMargin)} if empty',
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                validator: _validMargin,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: AppFormField(
+                controller: _stockMargin,
+                label: 'Own stock margin %',
+                hint: 'E.g. 30',
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                validator: _validMargin,
               ),
             ),
           ],
@@ -417,14 +476,23 @@ class _DealForm extends StatefulWidget {
 
 /// One editable order line in the deal form.
 class _Line {
-  _Line({this.productId, this.name = '', int quantity = 1, double? unitPrice})
-    : quantity = TextEditingController(text: '$quantity'),
-      unitPrice = TextEditingController(
-        text: unitPrice == null ? '' : formatAmount(unitPrice),
-      );
+  _Line({
+    this.productId,
+    this.name = '',
+    int quantity = 1,
+    double? unitPrice,
+    this.retail,
+  }) : quantity = TextEditingController(text: '$quantity'),
+       unitPrice = TextEditingController(
+         text: unitPrice == null ? '' : formatAmount(unitPrice),
+       );
 
   String? productId;
   String name;
+
+  /// Retail price the unit price was worked out from. Null once the price
+  /// was typed by hand (or on a saved deal): then it is left alone.
+  double? retail;
   final TextEditingController quantity;
   final TextEditingController unitPrice;
 
@@ -437,17 +505,18 @@ class _Line {
   }
 }
 
-class _DealFormState extends State<_DealForm> {
+class _DealFormState extends State<_DealForm> with _CustomerField {
+  @override
+  CrmStore get _store => widget.store;
+  @override
+  String? get _initialContactId =>
+      widget.existing?.contactId ?? widget.contactId;
+
   final _formKey = GlobalKey<FormState>();
   late final _value = TextEditingController(
     text: widget.existing == null ? '' : formatAmount(widget.existing!.value),
   );
   final _productSearch = TextEditingController();
-  late String? _contactId = widget.existing?.contactId ?? widget.contactId;
-
-  /// What is typed in the customer field. A name that is not in the CRM yet
-  /// is saved as a new private customer together with the deal.
-  final _who = TextEditingController();
   late var _stage = widget.existing?.stage ?? DealStage.nieuw;
   late final List<_Line> _lines = [
     for (final i in widget.existing?.items ?? const <DealItem>[])
@@ -458,34 +527,12 @@ class _DealFormState extends State<_DealForm> {
         unitPrice: i.unitPrice,
       ),
   ];
-  String? _whoError;
 
   /// Bumped after each pick so the product search starts empty again.
   int _searchRound = 0;
 
   @override
-  void initState() {
-    super.initState();
-    _who.addListener(_whoChanged);
-  }
-
-  /// Refreshes the hint under the customer field. The field also changes its
-  /// text while it is being built (after a pick), so wait for the frame then.
-  void _whoChanged() {
-    void refresh() {
-      if (mounted) setState(() => _whoError = null);
-    }
-
-    if (SchedulerBinding.instance.schedulerPhase == SchedulerPhase.idle) {
-      refresh();
-    } else {
-      SchedulerBinding.instance.addPostFrameCallback((_) => refresh());
-    }
-  }
-
-  @override
   void dispose() {
-    _who.dispose();
     _value.dispose();
     _productSearch.dispose();
     for (final l in _lines) {
@@ -495,6 +542,35 @@ class _DealFormState extends State<_DealForm> {
   }
 
   double get _linesTotal => _lines.fold(0, (sum, l) => sum + l.qty * l.price);
+
+  /// The partner's own-stock margin for this deal (0 for private customers
+  /// and new names).
+  double get _margin => _customer?.effectiveStockMargin ?? 0;
+
+  String? _pricedFor;
+
+  /// How the product prices were worked out, for partners.
+  String? get _priceNote {
+    final c = _customer;
+    if (c == null || c.isPrivate) return null;
+    return c.stockMargin == null
+        ? 'Retail prices: no own stock margin set for ${c.name}.'
+        : 'Partner prices: retail minus ${formatMargin(c.effectiveStockMargin)} '
+              'own stock margin.';
+  }
+
+  /// Works the prices out again for a new customer, except those typed in.
+  @override
+  void _customerChanged() {
+    final id = _customer?.id;
+    if (id == _pricedFor) return;
+    _pricedFor = id;
+    for (final l in _lines) {
+      if (l.retail != null) {
+        l.unitPrice.text = formatAmount(partnerPrice(l.retail!, _margin));
+      }
+    }
+  }
 
   /// Adds a product, or one more of it when it is already on the deal.
   void _addProduct(String? id) {
@@ -509,7 +585,8 @@ class _DealFormState extends State<_DealForm> {
           _Line(
             productId: product.id,
             name: product.name,
-            unitPrice: product.price,
+            unitPrice: partnerPrice(product.price, _margin),
+            retail: product.price,
           ),
         );
       }
@@ -518,68 +595,12 @@ class _DealFormState extends State<_DealForm> {
     });
   }
 
-  String get _typed => _who.text.trim();
-
-  /// Contacts whose name (or full picker label) is exactly [typed].
-  List<Contact> _named(String typed) {
-    final key = typed.toLowerCase();
-    return [
-      for (final c in widget.store.allContacts)
-        if (c.name.trim().toLowerCase() == key ||
-            DealerPicker.labelFor(c).toLowerCase() == key)
-          c,
-    ];
-  }
-
-  /// The customer the field points to: the one picked from the list, or the
-  /// only one whose name was typed in full. Null when nobody matches.
-  Contact? get _customer {
-    final picked = widget.store.contactById(_contactId);
-    final typed = _typed;
-    if (typed.isEmpty) return picked;
-    if (picked != null && _named(typed).contains(picked)) return picked;
-    final named = _named(typed);
-    return named.length == 1 ? named.single : null;
-  }
-
-  /// A typed name that is not in the CRM yet.
-  bool get _typedIsNew => _typed.isNotEmpty && _named(_typed).isEmpty;
-
-  /// Creates a customer on the spot (prefilled with the typed name) and picks
-  /// them for this deal.
-  Future<void> _addCustomer(ContactKind kind) async {
-    final customer = await showContactForm(
-      context,
-      kind: kind,
-      initialName: _typedIsNew ? _typed : null,
-    );
-    if (customer == null || !mounted) return;
-    setState(() {
-      _contactId = customer.id;
-      _whoError = null;
-    });
-    _who.text = DealerPicker.labelFor(customer);
-  }
-
   void _submit() {
     final formOk = _formKey.currentState!.validate();
+    final customerOk = _checkCustomer(required: true);
+    if (!formOk || !customerOk) return;
     final store = widget.store;
-    // A customer that was deleted while the form was open counts as missing.
-    var customer = _customer;
-    final typed = _typed;
-    String? error;
-    if (customer == null) {
-      if (typed.isEmpty) {
-        error = 'Choose a dealer or private customer';
-      } else if (_named(typed).length > 1) {
-        error = 'Several customers are called "$typed": pick one';
-      }
-    }
-    setState(() => _whoError = error);
-    if (!formOk || error != null) return;
-    // A new name: save the customer in the CRM along with the deal.
-    customer ??= store.addContact(name: typed, kind: ContactKind.person);
-    _contactId = customer.id;
+    _contactId = _saveCustomer();
     final existing = widget.existing;
     final items = [
       for (final l in _lines)
@@ -632,47 +653,7 @@ class _DealFormState extends State<_DealForm> {
       onSubmit: _submit,
       children: [
         // ---- who
-        DealerPicker(
-          store: widget.store,
-          selectedId: _contactId,
-          controller: _who,
-          includePrivate: true,
-          errorText: _whoError,
-          onSelected: (id) => setState(() {
-            _contactId = id;
-            _whoError = null;
-          }),
-        ),
-        if (_typedIsNew && _whoError == null)
-          Padding(
-            padding: const EdgeInsets.only(top: 6, left: 4),
-            child: Text(
-              '"$_typed" is not in the CRM yet. It will be saved as a new '
-              'private customer with this deal.',
-              style: const TextStyle(color: muted, fontSize: 12),
-            ),
-          ),
-        Wrap(
-          children: [
-            for (final (kind, icon, label) in [
-              (
-                ContactKind.person,
-                Icons.person_add_alt_1_outlined,
-                'New private customer',
-              ),
-              (ContactKind.dealer, Icons.add_business_outlined, 'New dealer'),
-            ])
-              TextButton.icon(
-                onPressed: () => _addCustomer(kind),
-                icon: Icon(icon, size: 18),
-                label: Text(label),
-                style: TextButton.styleFrom(
-                  foregroundColor: forest,
-                  visualDensity: VisualDensity.compact,
-                ),
-              ),
-          ],
-        ),
+        ..._customerField(saveWith: 'deal'),
         // ---- what
         if (products.isEmpty)
           const Text(
@@ -696,6 +677,8 @@ class _DealFormState extends State<_DealForm> {
               line.dispose();
             }),
           ),
+        if (_lines.any((l) => l.retail != null) && _priceNote != null)
+          Text(_priceNote!, style: const TextStyle(color: muted, fontSize: 12)),
         // ---- how much
         if (_lines.isEmpty)
           AppFormField(
@@ -1020,7 +1003,12 @@ class _LineEditor extends StatelessWidget {
                     ),
                     decoration: inputDecoration('Price each')
                         .copyWith(fillColor: Colors.white, isDense: true),
-                    onChanged: (_) => onChanged(),
+                    onChanged: (_) {
+                      // A price typed by hand stays when the customer
+                      // changes.
+                      item.retail = null;
+                      onChanged();
+                    },
                     validator: (v) =>
                         parseMoney(v ?? '') == null ? 'Price?' : null,
                   ),
@@ -1046,6 +1034,176 @@ class _LineEditor extends StatelessWidget {
   }
 }
 
+/// The customer field of the deal and task forms. Pick a dealer or private
+/// customer from the list, or type a name: a name that is not in the CRM yet
+/// is saved as a new private customer when the form is saved.
+mixin _CustomerField<T extends StatefulWidget> on State<T> {
+  CrmStore get _store;
+  String? get _initialContactId;
+
+  /// Whether the form may be saved without a customer ("Nobody").
+  bool get _customerOptional => false;
+
+  late String? _contactId = _initialContactId;
+
+  /// What is typed in the customer field.
+  final _who = TextEditingController();
+  String? _whoError;
+
+  @override
+  void initState() {
+    super.initState();
+    _who.addListener(_whoChanged);
+  }
+
+  @override
+  void dispose() {
+    _who.dispose();
+    super.dispose();
+  }
+
+  /// Refreshes the hint under the customer field. The field also changes its
+  /// text while it is being built (after a pick), so wait for the frame then.
+  void _whoChanged() {
+    void refresh() {
+      if (!mounted) return;
+      setState(() => _whoError = null);
+      _customerChanged();
+    }
+
+    if (SchedulerBinding.instance.schedulerPhase == SchedulerPhase.idle) {
+      refresh();
+    } else {
+      SchedulerBinding.instance.addPostFrameCallback((_) => refresh());
+    }
+  }
+
+  /// Called after the customer in the field may have changed.
+  void _customerChanged() {}
+
+  String get _typed => _who.text.trim();
+
+  /// The optional field's "Nobody" entry, picked or typed.
+  bool _isNobody(String typed) =>
+      _customerOptional &&
+      typed.toLowerCase() == DealerPicker.nobody.toLowerCase();
+
+  /// Contacts whose name (or full picker label) is exactly [typed].
+  List<Contact> _named(String typed) {
+    final key = typed.toLowerCase();
+    return [
+      for (final c in _store.allContacts)
+        if (c.name.trim().toLowerCase() == key ||
+            DealerPicker.labelFor(c).toLowerCase() == key)
+          c,
+    ];
+  }
+
+  /// The customer the field points to: the one picked from the list, or the
+  /// only one whose name was typed in full. Null when nobody matches. A
+  /// customer deleted while the form was open counts as nobody.
+  Contact? get _customer {
+    final picked = _store.contactById(_contactId);
+    final typed = _typed;
+    if (typed.isEmpty) return picked;
+    if (_isNobody(typed)) return null;
+    final named = _named(typed);
+    if (picked != null && named.contains(picked)) return picked;
+    return named.length == 1 ? named.single : null;
+  }
+
+  /// A typed name that is not in the CRM yet.
+  bool get _typedIsNew =>
+      _typed.isNotEmpty && !_isNobody(_typed) && _named(_typed).isEmpty;
+
+  /// Shows why the field can't be saved; true when it can.
+  bool _checkCustomer({required bool required}) {
+    final typed = _typed;
+    String? error;
+    if (_customer == null && !_typedIsNew) {
+      if (_named(typed).length > 1) {
+        error = 'Several customers are called "$typed": pick one';
+      } else if (required) {
+        error = 'Choose a dealer or private customer';
+      }
+    }
+    setState(() => _whoError = error);
+    return error == null;
+  }
+
+  /// The customer to save the form with. A new name is saved in the CRM as a
+  /// private customer first. Call after [_checkCustomer].
+  String? _saveCustomer() {
+    if (_typedIsNew) {
+      return _store.addContact(name: _typed, kind: ContactKind.person).id;
+    }
+    return _customer?.id;
+  }
+
+  /// Creates a customer on the spot (prefilled with the typed name) and picks
+  /// them.
+  Future<void> _addCustomer(ContactKind kind) async {
+    final customer = await showContactForm(
+      context,
+      kind: kind,
+      initialName: _typedIsNew ? _typed : null,
+    );
+    if (customer == null || !mounted) return;
+    setState(() {
+      _contactId = customer.id;
+      _whoError = null;
+    });
+    _who.text = DealerPicker.labelFor(customer);
+  }
+
+  /// The field, a hint when a new customer will be saved, and buttons to add
+  /// one with all their details. [saveWith] names the record ("deal").
+  List<Widget> _customerField({required String saveWith}) => [
+    DealerPicker(
+      store: _store,
+      selectedId: _contactId,
+      controller: _who,
+      optional: _customerOptional,
+      includePrivate: true,
+      errorText: _whoError,
+      onSelected: (id) => setState(() {
+        _contactId = id;
+        _whoError = null;
+      }),
+    ),
+    if (_typedIsNew && _whoError == null)
+      Padding(
+        padding: const EdgeInsets.only(top: 6, left: 4),
+        child: Text(
+          '"$_typed" is not in the CRM yet. It will be saved as a new '
+          'private customer with this $saveWith.',
+          style: const TextStyle(color: muted, fontSize: 12),
+        ),
+      ),
+    Wrap(
+      children: [
+        for (final (kind, icon, label) in [
+          (
+            ContactKind.person,
+            Icons.person_add_alt_1_outlined,
+            'New private customer',
+          ),
+          (ContactKind.dealer, Icons.add_business_outlined, 'New dealer'),
+        ])
+          TextButton.icon(
+            onPressed: () => _addCustomer(kind),
+            icon: Icon(icon, size: 18),
+            label: Text(label),
+            style: TextButton.styleFrom(
+              foregroundColor: forest,
+              visualDensity: VisualDensity.compact,
+            ),
+          ),
+      ],
+    ),
+  ];
+}
+
 /// Searchable dealer field — a plain dropdown is unusable with 200+ dealers.
 /// With [includePrivate], private customers can be picked too.
 class DealerPicker extends StatelessWidget {
@@ -1069,6 +1227,9 @@ class DealerPicker extends StatelessWidget {
 
   /// Holds the typed text, for forms that use what was typed.
   final TextEditingController? controller;
+
+  /// The optional field's entry for no customer.
+  static const nobody = 'Nobody';
 
   /// How [c] is shown in the list and in the field once picked.
   static String labelFor(Contact c) => [
@@ -1117,7 +1278,7 @@ class DealerPicker extends StatelessWidget {
           if (optional)
             DropdownMenuEntry<String?>(
               value: null,
-              label: includePrivate ? 'Nobody' : 'No dealer',
+              label: includePrivate ? nobody : 'No dealer',
             ),
           for (final c in dealers)
             DropdownMenuEntry<String?>(
@@ -1152,10 +1313,17 @@ class _TaskForm extends StatefulWidget {
   State<_TaskForm> createState() => _TaskFormState();
 }
 
-class _TaskFormState extends State<_TaskForm> {
+class _TaskFormState extends State<_TaskForm> with _CustomerField {
+  @override
+  CrmStore get _store => widget.store;
+  @override
+  String? get _initialContactId =>
+      widget.existing?.contactId ?? widget.contactId;
+  @override
+  bool get _customerOptional => true;
+
   final _formKey = GlobalKey<FormState>();
   late final _title = TextEditingController(text: widget.existing?.title);
-  late String? _contactId = widget.existing?.contactId ?? widget.contactId;
   late DateTime _due = widget.existing?.due ?? _defaultDue();
 
   DateTime _defaultDue() {
@@ -1212,8 +1380,11 @@ class _TaskFormState extends State<_TaskForm> {
   }
 
   void _submit() {
-    if (!_formKey.currentState!.validate()) return;
+    final formOk = _formKey.currentState!.validate();
+    final customerOk = _checkCustomer(required: false);
+    if (!formOk || !customerOk) return;
     final store = widget.store;
+    _contactId = _saveCustomer();
     final existing = widget.existing;
     final Task result;
     if (existing == null) {
@@ -1269,13 +1440,7 @@ class _TaskFormState extends State<_TaskForm> {
             ),
           ],
         ),
-        DealerPicker(
-          store: widget.store,
-          selectedId: _contactId,
-          optional: true,
-          includePrivate: true,
-          onSelected: (id) => setState(() => _contactId = id),
-        ),
+        ..._customerField(saveWith: 'task'),
       ],
     );
   }

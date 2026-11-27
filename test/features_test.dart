@@ -317,7 +317,8 @@ void main() {
         await tester.pumpAndSettle();
       }
       expect(find.text('Place 4 bikes'), findsOneWidget);
-      expect(find.text('CHF 10,360'), findsOneWidget);
+      // Retail 10,360 minus the standard 20% dépôt-vente margin.
+      expect(find.text('CHF 8,288'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 
@@ -475,7 +476,8 @@ void main() {
       final placed = store.bikesAt('c-lago');
       expect(placed.length, 2);
       expect(placed.map((b) => b.model), containsAll(['Mooi', 'Storm']));
-      expect(placed.every((b) => b.price == 2690), isTrue);
+      // Retail 2,690 minus the standard 20% dépôt-vente margin.
+      expect(placed.every((b) => b.price == 2152), isTrue);
       expect(store.activities.first.message, contains('2 bikes'));
       await tester.enterText(find.byKey(const Key('frame-search')), 'lg101');
       await tester.pumpAndSettle();

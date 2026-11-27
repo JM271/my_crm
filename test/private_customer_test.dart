@@ -243,6 +243,76 @@ void main() {
     expect(store.dealsFor(anna.id).single.value, 900);
   });
 
+  group('a new task', () {
+    Future<CrmStore> openNewTask(WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1400, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final store = await loadStore();
+      await tester.pumpWidget(MolenstraatApp(store: store));
+      await tester.tap(find.text('Tasks').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('New task').first);
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.widgetWithText(TextFormField, 'Task'),
+        'Call back about the fatbike',
+      );
+      return store;
+    }
+
+    Finder customerField() => find.descendant(
+      of: find.byType(DealerPicker),
+      matching: find.byType(TextField),
+    );
+
+    Task savedTask(CrmStore store) => store.tasks.singleWhere(
+      (t) => t.title == 'Call back about the fatbike',
+    );
+
+    testWidgets('saves a new name as a private customer', (tester) async {
+      final store = await openNewTask(tester);
+      final contacts = store.allContacts.length;
+
+      await tester.enterText(customerField(), 'Lea Frei');
+      await tester.pumpAndSettle();
+      expect(find.textContaining('with this task'), findsOneWidget);
+      await tester.tap(find.text('Add task'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Add task'), findsNothing);
+      expect(store.allContacts.length, contacts + 1);
+      final lea = store.privateCustomers.single;
+      expect(lea.name, 'Lea Frei');
+      expect(savedTask(store).contactId, lea.id);
+    });
+
+    testWidgets('can still be saved for nobody', (tester) async {
+      final store = await openNewTask(tester);
+      final contacts = store.allContacts.length;
+
+      await tester.tap(find.text('Add task'));
+      await tester.pumpAndSettle();
+      expect(savedTask(store).contactId, isNull);
+
+      expect(store.allContacts.length, contacts);
+    });
+
+    testWidgets('never saves "Nobody" as a customer', (tester) async {
+      final store = await openNewTask(tester);
+      final contacts = store.allContacts.length;
+
+      await tester.enterText(customerField(), 'Nobody');
+      await tester.pumpAndSettle();
+      expect(find.textContaining('is not in the CRM yet'), findsNothing);
+      await tester.tap(find.text('Add task'));
+      await tester.pumpAndSettle();
+
+      expect(store.allContacts.length, contacts);
+      expect(savedTask(store).contactId, isNull);
+    });
+  });
+
   testWidgets('the Dealers page lists private customers separately', (
     tester,
   ) async {
